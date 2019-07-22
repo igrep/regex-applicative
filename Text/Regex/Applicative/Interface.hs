@@ -3,8 +3,8 @@
 module Text.Regex.Applicative.Interface where
 import Control.Applicative hiding (empty)
 import qualified Control.Applicative
-import Control.Arrow
-import Data.Traversable
+import Control.Arrow hiding (first)
+import qualified Control.Arrow as A
 import Data.String
 import Data.Maybe
 import Text.Regex.Applicative.Types
@@ -110,11 +110,11 @@ withMatched (App a b) =
         withMatched a <*>
         withMatched b
 withMatched Fail = Fail
-withMatched (Fmap f x) = (f *** id) <$> withMatched x
+withMatched (Fmap f x) = A.first f <$> withMatched x
 withMatched (Rep gr f a0 x) =
-    Rep gr (\(a, s) (x, t) -> (f a x, s ++ t)) (a0, []) (withMatched x)
+    Rep gr (\(a, s) -> f a *** (s ++)) (a0, []) (withMatched x)
 -- N.B.: this ruins the Void optimization
-withMatched (Void x) = (const () *** id) <$> withMatched x
+withMatched (Void x) = (A.first $ const ()) <$> withMatched x
 
 -- | @s =~ a = match a s@
 (=~) :: [s] -> RE s a -> Maybe a
@@ -156,7 +156,7 @@ match re = let obj = compile re in \str ->
 -- >Text.Regex.Applicative> findFirstPrefix "bc" "abc"
 -- >Nothing
 findFirstPrefix :: RE s a -> [s] -> Maybe (a, [s])
-findFirstPrefix re str = go (compile re) str Nothing
+findFirstPrefix re = go (compile re) Nothing
     where
     walk obj [] = (obj, Nothing)
     walk obj (t:ts) =
@@ -164,7 +164,7 @@ findFirstPrefix re str = go (compile re) str Nothing
             Just r -> (obj, Just r)
             Nothing -> walk (addThread t obj) ts
 
-    go obj str resOld =
+    go obj resOld str =
         case walk emptyObject $ threads obj of
             (obj', resThis) ->
                 let res = ((flip (,) str) <$> resThis) <|> resOld
@@ -172,7 +172,7 @@ findFirstPrefix re str = go (compile re) str Nothing
                     case str of
                         _ | failed obj' -> res
                         [] -> res
-                        (s:ss) -> go (step s obj') ss res
+                        (s:ss) -> go (step s obj') res ss
 
 -- | Find the longest string prefix which is matched by the regular expression.
 --
@@ -191,19 +191,19 @@ findFirstPrefix re str = go (compile re) str Nothing
 -- >Text.Regex.Applicative Data.Char> findLongestPrefix lexeme "iffoo"
 -- >Just (Right "iffoo","")
 findLongestPrefix :: RE s a -> [s] -> Maybe (a, [s])
-findLongestPrefix re str = go (compile re) str Nothing
+findLongestPrefix re = go (compile re) Nothing
     where
-    go obj str resOld =
+    go obj resOld str =
         let res = (fmap (flip (,) str) $ listToMaybe $ results obj) <|> resOld
         in
             case str of
                 _ | failed obj -> res
                 [] -> res
-                (s:ss) -> go (step s obj) ss res
+                (s:ss) -> go (step s obj) res ss
 
 -- | Find the shortest prefix (analogous to 'findLongestPrefix')
 findShortestPrefix :: RE s a -> [s] -> Maybe (a, [s])
-findShortestPrefix re str = go (compile re) str
+findShortestPrefix = go . compile
     where
     go obj str =
         case results obj of
@@ -219,7 +219,7 @@ findShortestPrefix re str = go (compile re) str
 -- the prefix and suffix of the string surrounding the match.
 findFirstInfix :: RE s a -> [s] -> Maybe ([s], a, [s])
 findFirstInfix re str =
-    fmap (\((first, res), last) -> (first, res, last)) $
+    fmap (\((first, res), last') -> (first, res, last')) $
     findFirstPrefix ((,) <$> few anySym <*> re) str
 
 -- Auxiliary function for findExtremeInfix
@@ -285,8 +285,8 @@ findExtremalInfix
     -> RE s a
     -> [s]
     -> Maybe ([s], a, [s])
-findExtremalInfix newOrOld re str =
-    case go (compile $ (,) <$> prefixCounter <*> re) str NoResult of
+findExtremalInfix newOrOld re initStr =
+    case go (compile $ (,) <$> prefixCounter <*> re) initStr NoResult of
         NoResult -> Nothing
         r@GotResult{} ->
             Just (prefixStr r, result r, postfixStr r)

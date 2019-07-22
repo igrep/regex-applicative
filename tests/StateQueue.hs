@@ -1,3 +1,6 @@
+{-# OPTIONS_GHC -Wno-unused-imports #-}
+{-# OPTIONS_GHC -Wno-orphans #-}
+
 {-# LANGUAGE FlexibleInstances, MultiParamTypeClasses, ScopedTypeVariables #-}
 module StateQueue where
 
@@ -18,6 +21,7 @@ size = length . getElements
 instance (Monad m, Serial m a) => Serial m (StateQueue a) where
   series = fromElems <$> series
 
+stateQueueTests :: TestTree
 stateQueueTests = testGroup "StateQueue"
   [ testProperty "Insertion increments the # of elements" $
       \sq (i :: Int) -> size (insert i sq) == size sq + 1

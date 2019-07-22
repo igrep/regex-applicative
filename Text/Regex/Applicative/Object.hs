@@ -1,3 +1,5 @@
+{-# OPTIONS_GHC -Wno-unused-imports #-}
+
 --------------------------------------------------------------------
 -- |
 -- Module    : Text.Regex.Applicative.Object
@@ -51,7 +53,7 @@ threads (ReObject sq) = F.toList sq
 -- threads come from the same 'ReObject', unless you know what you're doing.
 -- However, it should be safe to filter out or rearrange threads.
 fromThreads :: [Thread s r] -> ReObject s r
-fromThreads ts = F.foldl' (flip addThread) emptyObject ts
+fromThreads = F.foldl' (flip addThread) emptyObject
 
 -- | Check whether a thread is a result thread
 isResult :: Thread s r -> Bool
@@ -71,7 +73,7 @@ failed obj = null $ threads obj
 
 -- | Empty object (with no threads)
 emptyObject :: ReObject s r
-emptyObject = ReObject $ SQ.empty
+emptyObject = ReObject SQ.empty
 
 -- | Extract the result values from all the result threads of an object
 results :: ReObject s r -> [r]
@@ -85,7 +87,7 @@ step s (ReObject sq) =
             case t of
                 Accept {} -> q
                 Thread _ c ->
-                    F.foldl' (\q x -> addThread x q) q $ c s
+                    F.foldl' (flip addThread) q $ c s
         newQueue = F.foldl' accum emptyObject sq
     in newQueue
 
@@ -116,19 +118,17 @@ compile =
     renumber
 
 renumber :: RE s a -> RE s a
-renumber e = flip evalState (ThreadId 1) $ go e
+renumber = (`evalState` ThreadId 1) . go
   where
     go :: RE s a -> State ThreadId (RE s a)
-    go e =
-        case e of
-            Eps -> return Eps
-            Symbol _ p -> Symbol <$> fresh <*> pure p
-            Alt a1 a2 -> Alt <$> go a1 <*> go a2
-            App a1 a2 -> App <$> go a1 <*> go a2
-            Fail -> return Fail
-            Fmap f a -> Fmap f <$> go a
-            Rep g f b a -> Rep g f b <$> go a
-            Void a -> Void <$> go a
+    go Eps = return Eps
+    go (Symbol _ p) = Symbol <$> fresh <*> pure p
+    go (Alt a1 a2) = Alt <$> go a1 <*> go a2
+    go (App a1 a2) = App <$> go a1 <*> go a2
+    go Fail = return Fail
+    go (Fmap f a) = Fmap f <$> go a
+    go (Rep g f b a) = Rep g f b <$> go a
+    go (Void a) = Void <$> go a
 
 fresh :: State ThreadId ThreadId
 fresh = do

@@ -1,3 +1,5 @@
+{-# LANGUAGE NamedFieldPuns #-}
+
 -- | This internal module is exposed only for testing and benchmarking. You
 -- don't need to import it.
 module Text.Regex.Applicative.StateQueue
@@ -43,7 +45,7 @@ insertUnique
     -> a
     -> StateQueue a
     -> StateQueue a
-insertUnique i v sq@StateQueue { ids = ids, elements = elements } =
+insertUnique i v sq@StateQueue { ids, elements } =
     if i `IntSet.member` ids
         then sq
         else sq { elements = v : elements

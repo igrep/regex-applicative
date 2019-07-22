@@ -1,4 +1,5 @@
 {-# LANGUAGE GADTs #-}
+{-# OPTIONS_GHC -Wno-unused-imports #-}
 {-# OPTIONS_GHC -fno-do-lambda-eta-expansion #-}
 module Text.Regex.Applicative.Compile (compile) where
 
@@ -55,7 +56,7 @@ compile2 e =
             let a1 = compile2 n1
                 a2 = compile2 n2
             in \k -> case k of
-                SingleCont k -> a1 $ SingleCont $ \a1_value -> a2 $ SingleCont $ k . a1_value
+                SingleCont k' -> a1 $ SingleCont $ \a1_value -> a2 $ SingleCont $ k' . a1_value
                 EmptyNonEmpty ke kn ->
                     a1 $ EmptyNonEmpty
                         -- empty
@@ -73,10 +74,10 @@ compile2 e =
         -- "failing" one in order to avoid non-termination.
         Rep g f b n ->
             let a = compile2 n
-                threads b k =
+                threads b' k =
                     combine g
-                        (a $ EmptyNonEmpty (\_ -> []) (\v -> let b' = f b v in threads b' (SingleCont $ nonEmptyCont k)))
-                        (emptyCont k b)
+                        (a $ EmptyNonEmpty (\_ -> []) (\v -> let b'' = f b' v in threads b'' (SingleCont $ nonEmptyCont k)))
+                        (emptyCont k b')
             in threads b
         Void n -> let a = compile2_ n in \k -> a $ fmap ($ ()) k
 
@@ -92,8 +93,8 @@ mkNFA e =
         go e [SAccept]
   where
   go :: RE s a -> [FSMState] -> State (FSMMap s) [FSMState]
-  go e k =
-    case e of
+  go re k =
+    case re of
         Eps -> return k
         Symbol i@(ThreadId n) p -> do
             modify $ IntMap.insert n $
@@ -113,10 +114,10 @@ mkNFA e =
         Void n -> go n k
 
   findEntries :: RE s a -> [FSMState]
-  findEntries e =
+  findEntries re =
     -- A simple (although a bit inefficient) way to find all entry points is
     -- just to use 'go'
-    evalState (go e []) IntMap.empty
+    evalState (go re []) IntMap.empty
 
 compile2_ :: RE s a -> Cont [Thread s r] -> [Thread s r]
 compile2_ e =
@@ -131,6 +132,7 @@ compile2_ e =
 
     in \k -> concatMap (mkThread (emptyCont k) (nonEmptyCont k)) entries
 
+combine :: Greediness -> [a] -> [a] -> [a]
 combine g continue stop =
     case g of
         Greedy -> continue ++ stop
