@@ -1,4 +1,8 @@
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE KindSignatures #-}
+{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE TypeOperators #-}
 {-# OPTIONS_GHC -fno-do-lambda-eta-expansion -fno-warn-unused-imports #-}
 module Text.Regex.Applicative.Types where
 
@@ -7,21 +11,25 @@ import Control.Applicative
 -- Applicative methods. But it's not actually used in the code, hence
 -- -fno-warn-unused-imports.
 
+import Data.Extensible
+import Data.Kind (Type)
+import qualified GHC.TypeLits as TL
+
 
 newtype ThreadId = ThreadId Int
 
 -- | A thread either is a result or corresponds to a symbol in the regular
 -- expression, which is expected by that thread.
-data Thread s r
+data Thread s i j r
     = Thread
         { threadId_ :: ThreadId
-        , _threadCont :: s -> [Thread s r]
+        , _threadCont :: s -> [Thread s i j r]
         }
     | Accept r
 
 -- | Returns thread identifier. This will be 'Just' for ordinary threads and
 -- 'Nothing' for results.
-threadId :: Thread s r -> Maybe ThreadId
+threadId :: Thread s i j r -> Maybe ThreadId
 threadId Thread { threadId_ = i } = Just i
 threadId _ = Nothing
 
@@ -55,17 +63,35 @@ data Greediness = Greedy | NonGreedy
 --
 -- * 'some' @ra@ matches concatenation of one or more strings matched by @ra@
 -- and returns the list of @ra@'s return values on those strings.
-data RE s a where
-    Eps :: RE s ()
-    Symbol :: ThreadId -> (s -> Maybe a) -> RE s a
-    Alt :: RE s a -> RE s a -> RE s a
-    App :: RE s (a -> b) -> RE s a -> RE s b
-    Fmap :: (a -> b) -> RE s a -> RE s b
-    Fail :: RE s a
+data RE s i j a where
+    Eps :: RE s (Record xs) (Record xs) ()
+    Symbol :: ThreadId -> (s -> Maybe a) -> RE s (Record xs) (Record xs) a
+    Alt :: RE s (Record xs) (Record ys) a -> RE s (Record xs) (Record ys) a -> RE s (Record xs) (Record ys) a
+    App :: RE s (Record xs) (Record ys) (a -> b) -> RE s (Record ys) (Record zs) a -> RE s (Record xs) (Record zs) b
+    Capture :: FieldName (k :: TL.Symbol) -> RE s (Record xs) (Record xs) v -> RE s (Record xs) (Record (k >: v ': xs)) ()
+    Fmap :: (a -> b) -> RE s (Record xs) (Record ys) a -> RE s (Record xs) (Record ys) b
+    Fail :: RE s (Record xs) (Record ys) a
+    Refer :: Getting v (Record xs) v -> RE s (Record xs) (Record xs) v
     Rep :: Greediness    -- repetition may be greedy or not
         -> (b -> a -> b) -- folding function (like in foldl)
         -> b             -- the value for zero matches, and also the initial value
                          -- for the folding function
-        -> RE s a
-        -> RE s b
-    Void :: RE s a -> RE s ()
+        -> RE s (Record xs) (Record xs) a
+        -> RE s (Record xs) (Record xs) b
+    Void :: RE s (Record xs) (Record ys) a -> RE s (Record xs) (Record ys) ()
+
+-- | Copied from the lens package
+type Getting r s a = (a -> Const r a) -> s -> Const r s
+
+-- TODO: Create a package or a PR to indexed and indexed-extras
+class IxZero m where
+    izero :: m i j a
+
+class IxZero m => IxPlus m where
+    iplus :: m i j a -> m i j a -> m i j a
+
+
+infixl 3 <<|>>
+{-# INLINE (<<|>>) #-}
+(<<|>>) :: IxPlus m => m i j a -> m i j a -> m i j a
+(<<|>>) = iplus

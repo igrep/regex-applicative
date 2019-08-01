@@ -20,9 +20,13 @@ Source-repository head
 
 Library
   Default-language:    Haskell2010
-  Build-depends:       base < 5,
-                       containers,
-                       transformers
+  Build-depends:       base < 5
+                     , containers
+                     , extensible >= 0.6
+                     , data-default-class
+                     , indexed
+                     , indexed-extras
+                     , transformers
   Exposed-modules:     Text.Regex.Applicative
                        Text.Regex.Applicative.Object
                        Text.Regex.Applicative.Common
