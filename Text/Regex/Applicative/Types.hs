@@ -20,16 +20,16 @@ newtype ThreadId = ThreadId Int
 
 -- | A thread either is a result or corresponds to a symbol in the regular
 -- expression, which is expected by that thread.
-data Thread s i j r
+data Thread s i r
     = Thread
         { threadId_ :: ThreadId
-        , _threadCont :: s -> i -> [(j, Thread s i j r)]
+        , _threadCont :: s -> i -> [Thread s i r]
         }
-    | Accept r
+    | Accept r i
 
 -- | Returns thread identifier. This will be 'Just' for ordinary threads and
 -- 'Nothing' for results.
-threadId :: Thread s i j r -> Maybe ThreadId
+threadId :: Thread s i r -> Maybe ThreadId
 threadId Thread { threadId_ = i } = Just i
 threadId _ = Nothing
 
@@ -79,6 +79,8 @@ data RE s i j a where
         -> RE s (Record xs) (Record xs) a
         -> RE s (Record xs) (Record xs) b
     Void :: RE s (Record xs) (Record ys) a -> RE s (Record xs) (Record ys) ()
+    -- ^ TODO: Add (Record xs) to each value constructor's arguments?
+    --         I guess it's necessary to make Compile.hs typecheck.
 
 -- | Copied from the lens package
 type Getting r s a = (a -> Const r a) -> s -> Const r s
