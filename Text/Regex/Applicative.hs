@@ -22,16 +22,8 @@ module Text.Regex.Applicative
     , Greediness(..)
     , few
     , comap
-    , withMatched
     , match
     , (=~)
-    , replace
-    , findFirstPrefix
-    , findLongestPrefix
-    , findShortestPrefix
-    , findFirstInfix
-    , findLongestInfix
-    , findShortestInfix
     , module Control.Applicative
     )
     where

@@ -1,6 +1,7 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE KindSignatures #-}
+{-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE TypeOperators #-}
 {-# OPTIONS_GHC -fno-do-lambda-eta-expansion -fno-warn-unused-imports #-}
@@ -63,25 +64,30 @@ data Greediness = Greedy | NonGreedy
 --
 -- * 'some' @ra@ matches concatenation of one or more strings matched by @ra@
 -- and returns the list of @ra@'s return values on those strings.
-data RE s i j a where
-    Eps :: RE s (Record xs) (Record xs) ()
-    Symbol :: ThreadId -> (s -> Maybe a) -> RE s (Record xs) (Record xs) a
-    Alt :: RE s (Record xs) (Record ys) a -> RE s (Record xs) (Record ys) a -> RE s (Record xs) (Record ys) a
-    App :: RE s (Record xs) (Record ys) (a -> b) -> RE s (Record ys) (Record zs) a -> RE s (Record xs) (Record zs) b
-    Capture :: FieldName (k :: TL.Symbol) -> RE s (Record xs) (Record xs) v -> RE s (Record xs) (Record (k >: v ': xs)) ()
-    Fmap :: (a -> b) -> RE s (Record xs) (Record ys) a -> RE s (Record xs) (Record ys) b
-    Fail :: RE s (Record xs) (Record ys) a
-    Refer :: Getting v (Record xs) v -> RE s (Record xs) (Record xs) v
+data RE s (xs :: [Assoc TL.Symbol Type]) (ys :: [Assoc TL.Symbol Type]) a where
+    Eps :: RE s xs xs ()
+    Symbol :: ThreadId -> (s -> Maybe a) -> RE s xs xs a
+    Alt :: RE s xs ys a -> RE s xs ys a -> RE s xs ys a
+    App :: RE s xs ys (a -> b) -> RE s ys zs a -> RE s xs zs b
+    Capture :: FieldName k -> RE s xs xs v -> RE s xs (k >: v ': xs) ()
+    Fmap :: (a -> b) -> RE s xs ys a -> RE s xs ys b
+    Fail :: RE s xs ys a
+    Refer :: Getting v (Record xs) v -> RE s xs xs v
     Rep :: Greediness    -- repetition may be greedy or not
         -> (b -> a -> b) -- folding function (like in foldl)
         -> b             -- the value for zero matches, and also the initial value
                          -- for the folding function
-        -> RE s (Record xs) (Record xs) a
-        -> RE s (Record xs) (Record xs) b
-    Void :: RE s (Record xs) (Record ys) a -> RE s (Record xs) (Record ys) ()
+        -> RE s xs xs a
+        -> RE s xs xs b
+    Void :: RE s xs ys a -> RE s xs ys ()
 
 -- | Copied from the lens package
 type Getting r s a = (a -> Const r a) -> s -> Const r s
+
+-- | Copied from the lens package
+(^.) :: s -> Getting a s a -> a
+s ^. l = getConst (l Const s)
+{-# INLINE (^.) #-}
 
 -- TODO: Create a package or a PR to indexed and indexed-extras
 class IxZero m where

@@ -1,5 +1,6 @@
 {-# OPTIONS_GHC -Wno-unused-imports #-}
 {-# LANGUAGE OverloadedStrings, FlexibleInstances, MultiParamTypeClasses, FlexibleContexts #-}
+{-# LANGUAGE DataKinds #-}
 import Text.Regex.Applicative
 import Text.Regex.Applicative.Reference
 import Control.Applicative
@@ -15,8 +16,6 @@ import Test.Tasty
 import Test.Tasty.SmallCheck
 import Test.Tasty.HUnit
 
-import StateQueue
-
 -- Small alphabets as SmallCheck's series
 newtype A = A { a :: Char } deriving Show
 instance Monad m => Serial m A where
@@ -30,13 +29,13 @@ newtype ABC = ABC { abc :: Char } deriving Show
 instance Monad m => Serial m ABC where
     series = cons0 (ABC 'a') \/ cons0 (ABC 'b') \/ cons0 (ABC 'c')
 
-re1 :: RE Char (Int, Int)
+re1 :: RE Char '[] '[] (Int, Int)
 re1 =
     let one = 1 <$ sym 'a'
         two = 2 <$ sym 'a' <* sym 'a'
     in (,) <$> (one <|> two) <*> (two <|> one)
 
-re2 :: RE Char [Int]
+re2 :: RE Char '[] '[] [Int]
 re2 = sequenceA
     [ 1 <$ sym 'a' <* sym 'a' <|>
       2 <$ sym 'a'
@@ -44,7 +43,7 @@ re2 = sequenceA
     , 4 <$ sym 'b' <|>
       5 <$ sym 'a' ]
 
-re3 :: RE Char [Int]
+re3 :: RE Char '[] '[] [Int]
 re3 = sequenceA
     [ pure 0 <|> pure 1
     ,  1 <$ sym 'a' <* sym 'a' <|>
@@ -55,47 +54,39 @@ re3 = sequenceA
       pure 7 <|>
       5 <$ sym 'a' ]
 
-re4 :: RE Char String
+re4 :: RE Char '[] '[] String
 re4 = sym 'a' *> many (sym 'b') <* sym 'a'
 
-re5 :: RE Char String
+re5 :: RE Char '[] '[] String
 re5 = (sym 'a' <|> sym 'a' *> sym 'a') *> many (sym 'a')
 
-re6 :: RE Char [Int]
+re6 :: RE Char '[] '[] [Int]
 re6 = many (3 <$ sym 'a' <* sym 'a' <* sym 'a' <|> 1 <$ sym 'a')
 
 -- Regular expression from the weighted regexp paper.
-re7 :: RE Char ([(String, Char, String, Char)], String)
+re7 :: RE Char '[] '[] ([(String, Char, String, Char)], String)
 re7 =
     let many_A_or_B = many (sym 'a' <|> sym 'b')
     in (,) <$>
         many ((,,,) <$> many_A_or_B <*> sym 'c' <*> many_A_or_B <*> sym 'c') <*>
         many_A_or_B
 
-re8 :: RE Char (String, String)
+re8 :: RE Char '[] '[] (String, String)
 re8 = (,) <$> many (sym 'a' <|> sym 'b') <*> many (sym 'b' <|> sym 'c')
 
 -- NB: we don't test these against the reference impl, 'cause it will loop!
-re9, re10 :: RE Char String
+re9, re10 :: RE Char '[] '[] String
 re9 = many (sym 'a' <|> empty) <* sym 'b'
 re10 = few (sym 'a' <|> empty) <* sym 'b'
 
-prop :: Eq a => RE s a -> (b -> s) -> [b] -> Bool
+prop :: Eq a => RE s '[] '[] a -> (b -> s) -> [b] -> Bool
 prop re f s =
     let fs = map f s in
     reference re fs == (fs =~ re)
 
-prop_withMatched :: [AB] -> Bool
-prop_withMatched =
-    let re = withMatched $ many (string "a" <|> string "ba")
-    in \str ->
-        case map ab str =~ re of
-            Nothing -> True
-            Just (x, y) -> concat x == y
-
 -- Because we have 2 slightly different algorithms for recognition and parsing,
 -- we test that they agree
-testRecognitionAgainstParsing :: RE s a -> (b -> s) -> [b] -> Bool
+testRecognitionAgainstParsing :: RE s '[] '[] a -> (b -> s) -> [b] -> Bool
 testRecognitionAgainstParsing re f s =
     let fs = map f s in
     isJust (fs =~ re) == isJust (fs =~ (re $> ()))
@@ -124,91 +115,10 @@ tests = testGroup "Tests"
        , t "re8" 10 $ testRecognitionAgainstParsing re9 ab
        , t "re8" 10 $ testRecognitionAgainstParsing re10 ab
        ]
-    , testProperty "withMatched" prop_withMatched
-    , testGroup "Tests for matching functions"
-        [ testGroup "findFirstPrefix"
-            [ u "t1"
-                (findFirstPrefix ("a" <|> "ab") "abc")
-                (Just ("a","bc"))
-            , u "t2"
-                (findFirstPrefix ("ab" <|> "a") "abc")
-                (Just ("ab","c"))
-            , u "t3"
-                (findFirstPrefix "bc" "abc")
-                Nothing
-            ]
-        , testGroup "findFirstInfix"
-            [ u "t1"
-                (findFirstInfix ("a" <|> "ab") "tabc")
-                (Just ("t", "a","bc"))
-            , u "t2"
-                (findFirstInfix ("ab" <|> "a") "tabc")
-                (Just ("t", "ab","c"))
-            ]
-        , testGroup "findLongestPrefix"
-            [ u "t1"
-                (findLongestPrefix ("a" <|> "ab") "abc")
-                (Just ("ab","c"))
-            , u "t2"
-                (findLongestPrefix ("ab" <|> "a") "abc")
-                (Just ("ab","c"))
-            , u "t3"
-                (findLongestPrefix "bc" "abc")
-                Nothing
-            ]
-        , testGroup "findLongestInfix"
-            [ u "t1"
-                (findLongestInfix ("a" <|> "ab") "tabc")
-                (Just ("t", "ab","c"))
-            , u "t2"
-                (findLongestInfix ("ab" <|> "a") "tabc")
-                (Just ("t", "ab","c"))
-            , u "t3"
-                (findLongestInfix "bc" "tabc")
-                (Just ("ta", "bc",""))
-            ]
-        , testGroup "findShortestPrefix"
-            [ u "t1"
-                (findShortestPrefix ("a" <|> "ab") "abc")
-                (Just ("a","bc"))
-            , u "t2"
-                (findShortestPrefix ("ab" <|> "a") "abc")
-                (Just ("a","bc"))
-            , u "t3"
-                (findShortestPrefix "bc" "abc")
-                Nothing
-            ]
-        , testGroup "findShortestInfix"
-            [ u "t1"
-                (findShortestInfix ("a" <|> "ab") "tabc")
-                (Just ("t", "a","bc"))
-            , u "t2"
-                (findShortestInfix ("ab" <|> "a") "tabc")
-                (Just ("t", "a","bc"))
-            , u "t3"
-                (findShortestInfix "bc" "tabc")
-                (Just ("ta", "bc",""))
-            ]
-        , testGroup "replace"
-            [ u "t1"
-                (replace ("x" <$ "a" <|> "y" <$ "ab") "tabc")
-                "tyc"
-            , u "t2"
-                (replace ("y" <$ "ab" <|> "x" <$ "a") "tabc")
-                "tyc"
-            , u "t3"
-                (replace ("x" <$ "bc") "tabc")
-                "tax"
-            , u "t4"
-                (replace ("y" <$ "a" <|> "x" <$ "ab") "tacabc")
-                "tycxc"
-            ]
-        ]
-    , stateQueueTests
     ]
     where
     t name n = localOption (SmallCheckDepth n) . testProperty name
-    u name real ideal = testCase name (assertEqual "" real ideal)
+    -- u name real ideal = testCase name (assertEqual "" real ideal)
 
 main :: IO ()
 main = defaultMain tests
