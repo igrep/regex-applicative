@@ -78,7 +78,6 @@ data RE s (xs :: [Assoc TL.Symbol Type]) (ys :: [Assoc TL.Symbol Type]) a where
                          -- for the folding function
         -> RE s xs xs a
         -> RE s xs xs b
-    Void :: RE s xs ys a -> RE s xs ys ()
 
 -- | Copied from the lens package
 type Getting r s a = (a -> Const r a) -> s -> Const r s

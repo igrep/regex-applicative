@@ -102,7 +102,6 @@ re2IxMonad r =
             am = re2IxMonad ra
             rep b = combine (rep . f b =<<< am) (ireturn b)
             combine a b = case g of Greedy -> a `iplus` b; NonGreedy -> b `iplus` a
-        Void a -> void $ re2IxMonad a
         Fail -> izero
 
 -- | For original regex-applicative's 'reference' implementation.
@@ -125,7 +124,6 @@ re2Monad r =
             am = re2Monad ra
             rep b = combine (do a <- am; rep $ f b a) (return b)
             combine a b = case g of Greedy -> a <|> b; NonGreedy -> b <|> a
-        Void a -> re2Monad a >> return ()
         Fail -> empty
 
 runP :: Eq s => P s a -> [s] -> Maybe a

@@ -10,7 +10,7 @@ import qualified Data.IntMap as IntMap
 import Data.Maybe
 import Text.Regex.Applicative.Types
 
-compile :: RE s (Record xs) (Record ys) a -> (a -> Record xs -> [Thread s (Record ys) r]) -> [Thread s (Record ys) r]
+compile :: RE s xs ys a -> (a -> Record xs -> [Thread s (Record ys) r]) -> [Thread s (Record ys) r]
 compile e k = compile2 e (SingleCont k)
 
 data Cont a = SingleCont !a | EmptyNonEmpty !a !a
@@ -43,7 +43,7 @@ nonEmptyCont k =
 --
 -- compile2 function takes two continuations: one when the match is empty and
 -- one when the match is non-empty. See the "Rep" case for the reason.
-compile2 :: RE s (Record xs) (Record ys) a -> Cont (a -> Record xs -> [Thread s (Record ys) r]) -> [Thread s (Record ys) r]
+compile2 :: RE s xs ys a -> Cont (a -> Record xs -> [Thread s (Record ys) r]) -> [Thread s (Record ys) r]
 compile2 e =
     case e of
         Eps -> \k -> emptyCont k ()
@@ -80,58 +80,6 @@ compile2 e =
                         (a $ EmptyNonEmpty (\_ -> []) (\v -> let b'' = f b' v in threads b'' (SingleCont $ nonEmptyCont k)))
                         (emptyCont k b')
             in threads b
-        Void n -> let a = compile2_ n in \k -> a $ fmap ($ ()) k
-
-data FSMState
-    = SAccept
-    | STransition ThreadId
-
-type FSMMap s = IntMap.IntMap (s -> Bool, [FSMState])
-
-mkNFA :: RE s (Record xs) (Record ys) a -> ([FSMState], (FSMMap s))
-mkNFA e =
-    flip runState IntMap.empty $
-        go e [SAccept]
-  where
-  go :: RE s (Record xs) (Record ys) a -> [FSMState] -> State (FSMMap s) [FSMState]
-  go re k =
-    case re of
-        Eps -> return k
-        Symbol i@(ThreadId n) p -> do
-            modify $ IntMap.insert n $
-                (isJust . p, k)
-            return [STransition i]
-        App n1 n2 -> go n1 =<< go n2 k
-        Alt n1 n2 -> (++) <$> go n1 k <*> go n2 k
-        Fail -> return []
-        Fmap _ n -> go n k
-        Rep g _ _ n ->
-            let entries = findEntries n
-                cont = combine g entries k
-            in
-            -- return value of 'go' is ignored -- it should be a subset of
-            -- 'cont'
-            go n cont >> return cont
-        Void n -> go n k
-
-  findEntries :: RE s (Record xs) (Record ys) a -> [FSMState]
-  findEntries re =
-    -- A simple (although a bit inefficient) way to find all entry points is
-    -- just to use 'go'
-    evalState (go re []) IntMap.empty
-
-compile2_ :: RE s (Record xs) (Record ys) a -> Cont [Thread s (Record ys) r] -> [Thread s (Record ys) r]
-compile2_ e =
-    let (entries, fsmap) = mkNFA e
-        mkThread _ k1 (STransition i@(ThreadId n)) =
-            let (p, cont) = fromMaybe (error "Unknown id") $ IntMap.lookup n fsmap
-            in [Thread i $ \s st ->
-                if p s
-                    then concatMap (mkThread k1 k1) cont
-                    else []]
-        mkThread k0 _ SAccept = k0
-
-    in \k -> concatMap (mkThread (emptyCont k) (nonEmptyCont k)) entries
 
 combine :: Greediness -> [a] -> [a] -> [a]
 combine g continue stop =
