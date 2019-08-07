@@ -18,12 +18,11 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE PolyKinds #-}
-module Text.Regex.Applicative.Reference (reference) where
+module Text.Regex.Applicative.Reference (referenceIx, reference) where
 
 import Prelude hiding (getChar)
 import Text.Regex.Applicative.Types
 import Data.Extensible
-import Data.Functor.Const
 import Control.Applicative
 import Control.Monad
 import Data.Functor.Indexed
@@ -82,8 +81,8 @@ getChar = P $ \case
     [] -> []
     c : cs -> [(c, cs)]
 
-re2monad :: RE s (Record xs) (Record ys) a -> PC s (Record xs) (Record ys) a
-re2monad r =
+re2IxMonad :: Eq s => RE s xs ys a -> PC s (Record xs) (Record ys) a
+re2IxMonad r =
     case r of
         Eps -> return $ error "eps"
         Symbol _ p ->
@@ -91,37 +90,58 @@ re2monad r =
                 case p c of
                   Just r' -> ireturn r'
                   Nothing -> liftPC empty
-        Alt a1 a2 -> re2monad a1 `iplus` re2monad a2
-        App a1 a2 -> re2monad a1 `iap` re2monad a2
+        Alt a1 a2 -> re2IxMonad a1 `iplus` re2IxMonad a2
+        App a1 a2 -> re2IxMonad a1 `iap` re2IxMonad a2
         Capture k rx ->
-            re2monad rx >>>= \x -> imodify (k @== x <:)
-        Fmap f a -> f <$> re2monad a
-        Refer k -> igets (^. k)
+            re2IxMonad rx >>>= \x -> imodify (k @== x <:) *>> ireturn x
+        Fmap f a -> f <$> re2IxMonad a
+        Refer k -> igets (^. k) >>>=
+            traverse (re2IxMonad . Symbol (error "Not numbered symbol") . (\c1 c2 -> if c1 == c2 then Just c1 else Nothing))
         Rep g f rb ra -> rep rb
           where
-            am = re2monad ra
+            am = re2IxMonad ra
             rep b = combine (rep . f b =<<< am) (ireturn b)
             combine a b = case g of Greedy -> a `iplus` b; NonGreedy -> b `iplus` a
-        Void a -> void $ re2monad a
+        Void a -> void $ re2IxMonad a
         Fail -> izero
 
+-- | For original regex-applicative's 'reference' implementation.
+re2Monad :: RE s xs ys a -> P s a
+re2Monad r =
+    case r of
+        Eps -> return $ error "eps"
+        Symbol _ p -> do
+            c <- getChar
+            case p c of
+              Just r' -> return r'
+              Nothing -> empty
+        Alt a1 a2 -> re2Monad a1 <|> re2Monad a2
+        App a1 a2 -> re2Monad a1 <*> re2Monad a2
+        Capture {} -> error "Capture is not supported by re2Monad"
+        Fmap f a -> fmap f $ re2Monad a
+        Refer {} -> error "Refer is not supported by re2Monad"
+        Rep g f rb ra -> rep rb
+            where
+            am = re2Monad ra
+            rep b = combine (do a <- am; rep $ f b a) (return b)
+            combine a b = case g of Greedy -> a <|> b; NonGreedy -> b <|> a
+        Void a -> re2Monad a >> return ()
+        Fail -> empty
 
--- | Copied from the lens package
-(^.) :: s -> Getting a s a -> a
-s ^. l = getConst (l Const s)
-{-# INLINE (^.) #-}
-
-runP :: P s a -> [s] -> Maybe a
+runP :: Eq s => P s a -> [s] -> Maybe a
 runP m s = case filter (null . snd) $ unP m s of
     (r, _) : _ -> Just r
     _ -> Nothing
 
-runPC :: PC s (Record xs) (Record ys) a -> Record xs -> [s] -> Maybe (a, Record ys)
+runPC :: Eq s => PC s (Record xs) (Record ys) a -> Record xs -> [s] -> Maybe (a, Record ys)
 runPC (PC m) xs s = (`runP` s) $ runIxStateT m xs
+
+referenceIx :: Eq s => RE s '[] ys a -> [s] -> Maybe (a, Record ys)
+referenceIx r = runPC (re2IxMonad r) nil
 
 -- | 'reference' @r@ @s@ should give the same results as @s@ '=~' @r@.
 --
 -- However, this is not very efficient implementation and is supposed to be
 -- used for testing only.
-reference :: RE s (Record '[]) (Record ys) a -> [s] -> Maybe (a, Record ys)
-reference r = runPC (re2monad r) nil
+reference :: Eq s => RE s '[] '[] a -> [s] -> Maybe a
+reference r = runP (re2Monad r)
