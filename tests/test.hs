@@ -129,6 +129,8 @@ tests = testGroup "Tests"
 
         , testCase "fixed-length palindrome with group capturing" $ do
             let re =
+                    -- Never care about that this version is longer than the original...
+                    -- Commenting out some of the `captureSym`s, the corresponding `refer` fails to type-check.
                         captureSym #firstHalf1 anySym
                     *>> captureSym #firstHalf2 anySym
                     *>> captureSym #firstHalf3 anySym
