@@ -1,8 +1,10 @@
 {-# OPTIONS_GHC -Wno-unused-imports #-}
 {-# LANGUAGE OverloadedStrings, FlexibleInstances, MultiParamTypeClasses, FlexibleContexts #-}
-{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DataKinds, OverloadedLabels #-}
+
 import Text.Regex.Applicative
 import Text.Regex.Applicative.Reference
+import qualified Text.Regex.Applicative.Original as Orig
 import Control.Applicative
 import Control.Monad
 import Data.Functor (($>))
@@ -79,14 +81,14 @@ re9, re10 :: RE Char '[] '[] String
 re9 = many (sym 'a' <|> empty) <* sym 'b'
 re10 = few (sym 'a' <|> empty) <* sym 'b'
 
-prop :: Eq a => RE s '[] '[] a -> (b -> s) -> [b] -> Bool
+prop :: (Eq a, Eq s) => RE s '[] '[] a -> (b -> s) -> [b] -> Bool
 prop re f s =
     let fs = map f s in
     reference re fs == (fs =~ re)
 
 -- Because we have 2 slightly different algorithms for recognition and parsing,
 -- we test that they agree
-testRecognitionAgainstParsing :: RE s '[] '[] a -> (b -> s) -> [b] -> Bool
+testRecognitionAgainstParsing :: Eq s => RE s '[] '[] a -> (b -> s) -> [b] -> Bool
 testRecognitionAgainstParsing re f s =
     let fs = map f s in
     isJust (fs =~ re) == isJust (fs =~ (re $> ()))
@@ -115,6 +117,30 @@ tests = testGroup "Tests"
        , t "re8" 10 $ testRecognitionAgainstParsing re9 ab
        , t "re8" 10 $ testRecognitionAgainstParsing re10 ab
        ]
+    , testGroup "Group capturing feature"
+        [ testCase "fixed-length palindrome without group capturing" $ do
+            let matchWithPalindrome8 s = do
+                    let re = sequenceA $ replicate 4 Orig.anySym
+                    (matched, left) <- Orig.findFirstPrefix re s
+                    guard $ reverse matched == left
+
+            assertEqual "Matches with a palindrome" (matchWithPalindrome8 "abcddcba") (Just ())
+            assertEqual "Doesn't match with a non-palindrome" (matchWithPalindrome8 "abcddcab") Nothing
+
+        , testCase "fixed-length palindrome with group capturing" $ do
+            let re =
+                        captureSym #firstHalf1 anySym
+                    *>> captureSym #firstHalf2 anySym
+                    *>> captureSym #firstHalf3 anySym
+                    *>> captureSym #firstHalf4 anySym
+                    *>> refer #firstHalf4
+                    *>> refer #firstHalf3
+                    *>> refer #firstHalf2
+                    *>> refer #firstHalf1
+                    *>> ireturn ()
+            assertEqual "Matches with a palindrome" ("abcddcba" =~ re) (Just ())
+            assertEqual "Doesn't match with a non-palindrome" ("abcddcab" =~ re) Nothing
+        ]
     ]
     where
     t name n = localOption (SmallCheckDepth n) . testProperty name
