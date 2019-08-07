@@ -105,8 +105,8 @@ few a = reverse <$> Rep NonGreedy (flip (:)) [] a
 capture :: FieldName k -> RE s xs xs [s] -> RE s xs ((k >: [s]) : xs) [s]
 capture = Capture
 
-captureChar :: FieldName k -> RE s xs xs s -> RE s xs ((k >: [s]) : xs) [s]
-captureChar k = capture k . fmap (: [])
+captureSym :: FieldName k -> RE s xs xs s -> RE s xs ((k >: [s]) : xs) [s]
+captureSym k = capture k . fmap (: [])
 
 refer :: Getting [s] (Record xs) [s] -> RE s xs xs [s]
 refer = Refer

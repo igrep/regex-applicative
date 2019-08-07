@@ -25,7 +25,7 @@ module Text.Regex.Applicative
     , (=~)
     , refer
     , capture
-    , captureChar
+    , captureSym
     , module Control.Applicative
     , module Data.Functor.Indexed
     )
