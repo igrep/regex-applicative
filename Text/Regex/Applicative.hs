@@ -21,12 +21,16 @@ module Text.Regex.Applicative
     , reFoldl
     , Greediness(..)
     , few
-    , comap
     , match
     , (=~)
+    , refer
+    , capture
+    , captureChar
     , module Control.Applicative
+    , module Data.Functor.Indexed
     )
     where
 import Text.Regex.Applicative.Types
 import Text.Regex.Applicative.Interface
 import Control.Applicative
+import Data.Functor.Indexed

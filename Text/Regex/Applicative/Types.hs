@@ -69,10 +69,10 @@ data RE s (xs :: [Assoc TL.Symbol Type]) (ys :: [Assoc TL.Symbol Type]) a where
     Symbol :: ThreadId -> (s -> Maybe a) -> RE s xs xs a
     Alt :: RE s xs ys a -> RE s xs ys a -> RE s xs ys a
     App :: RE s xs ys (a -> b) -> RE s ys zs a -> RE s xs zs b
-    Capture :: FieldName k -> RE s xs xs v -> RE s xs (k >: v ': xs) ()
+    Capture :: FieldName k -> RE s xs xs [s] -> RE s xs (k >: [s] ': xs) [s]
     Fmap :: (a -> b) -> RE s xs ys a -> RE s xs ys b
     Fail :: RE s xs ys a
-    Refer :: Getting v (Record xs) v -> RE s xs xs v
+    Refer :: Getting [s] (Record xs) [s] -> RE s xs xs [s]
     Rep :: Greediness    -- repetition may be greedy or not
         -> (b -> a -> b) -- folding function (like in foldl)
         -> b             -- the value for zero matches, and also the initial value

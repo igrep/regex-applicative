@@ -46,23 +46,6 @@ instance IxApplicative (RE s) where
 instance (char ~ Char, string ~ String) => IsString (RE char xs xs string) where
     fromString = string
 
--- | 'RE' is a profunctor. This is its contravariant map.
---
--- (A dependency on the @profunctors@ package doesn't seem justified.)
-comap :: (s2 -> s1) -> RE s1 xs ys a -> RE s2 xs ys a
-comap f re =
-  case re of
-    Eps -> Eps
-    Symbol t p    -> Symbol t (p . f)
-    Alt r1 r2     -> Alt (comap f r1) (comap f r2)
-    App r1 r2     -> App (comap f r1) (comap f r2)
-    Capture k rx  -> Capture k (comap f rx)
-    Fmap g r      -> Fmap g (comap f r)
-    Fail          -> Fail
-    Refer g       -> Refer g
-    Rep gr fn a r -> Rep gr fn a (comap f r)
-    Void r        -> Void (comap f r)
-
 -- | Match and return a single symbol which satisfies the predicate
 psym :: (s -> Bool) -> RE s xs xs s
 psym p = msym (\s -> if p s then Just s else Nothing)
@@ -119,14 +102,17 @@ reFoldl g f b a = Rep g f b a
 few :: RE s xs xs a -> RE s xs xs [a]
 few a = reverse <$> Rep NonGreedy (flip (:)) [] a
 
-capture :: FieldName k -> RE s xs xs v -> RE s xs ((k >: v) : xs) ()
+capture :: FieldName k -> RE s xs xs [s] -> RE s xs ((k >: [s]) : xs) [s]
 capture = Capture
 
-refer :: Getting v (Record xs) v -> RE s xs xs v
+captureChar :: FieldName k -> RE s xs xs s -> RE s xs ((k >: [s]) : xs) [s]
+captureChar k = capture k . fmap (: [])
+
+refer :: Getting [s] (Record xs) [s] -> RE s xs xs [s]
 refer = Refer
 
 -- | @s =~ a = match a s@
-(=~) :: [s] -> RE s '[] ys a -> Maybe a
+(=~) :: Eq s => [s] -> RE s '[] ys a -> Maybe a
 (=~) = flip match
 infix 2 =~
 
@@ -140,5 +126,5 @@ infix 2 =~
 -- >Text.Regex.Applicative> match (sym 'a' <|> sym 'b') "ab"
 -- >Nothing
 --
-match :: RE s '[] ys a -> [s] -> Maybe a
+match :: Eq s => RE s '[] ys a -> [s] -> Maybe a
 match re = fmap fst . referenceIx re

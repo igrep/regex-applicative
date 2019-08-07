@@ -81,7 +81,7 @@ getChar = P $ \case
     [] -> []
     c : cs -> [(c, cs)]
 
-re2IxMonad :: RE s xs ys a -> PC s (Record xs) (Record ys) a
+re2IxMonad :: Eq s => RE s xs ys a -> PC s (Record xs) (Record ys) a
 re2IxMonad r =
     case r of
         Eps -> return $ error "eps"
@@ -93,9 +93,10 @@ re2IxMonad r =
         Alt a1 a2 -> re2IxMonad a1 `iplus` re2IxMonad a2
         App a1 a2 -> re2IxMonad a1 `iap` re2IxMonad a2
         Capture k rx ->
-            re2IxMonad rx >>>= \x -> imodify (k @== x <:)
+            re2IxMonad rx >>>= \x -> imodify (k @== x <:) *>> ireturn x
         Fmap f a -> f <$> re2IxMonad a
-        Refer k -> igets (^. k)
+        Refer k -> igets (^. k) >>>=
+            traverse (re2IxMonad . Symbol (error "Not numbered symbol") . (\c1 c2 -> if c1 == c2 then Just c1 else Nothing))
         Rep g f rb ra -> rep rb
           where
             am = re2IxMonad ra
@@ -127,20 +128,20 @@ re2Monad r =
         Void a -> re2Monad a >> return ()
         Fail -> empty
 
-runP :: P s a -> [s] -> Maybe a
+runP :: Eq s => P s a -> [s] -> Maybe a
 runP m s = case filter (null . snd) $ unP m s of
     (r, _) : _ -> Just r
     _ -> Nothing
 
-runPC :: PC s (Record xs) (Record ys) a -> Record xs -> [s] -> Maybe (a, Record ys)
+runPC :: Eq s => PC s (Record xs) (Record ys) a -> Record xs -> [s] -> Maybe (a, Record ys)
 runPC (PC m) xs s = (`runP` s) $ runIxStateT m xs
 
-referenceIx :: RE s '[] ys a -> [s] -> Maybe (a, Record ys)
+referenceIx :: Eq s => RE s '[] ys a -> [s] -> Maybe (a, Record ys)
 referenceIx r = runPC (re2IxMonad r) nil
 
 -- | 'reference' @r@ @s@ should give the same results as @s@ '=~' @r@.
 --
 -- However, this is not very efficient implementation and is supposed to be
 -- used for testing only.
-reference :: RE s '[] '[] a -> [s] -> Maybe a
+reference :: Eq s => RE s '[] '[] a -> [s] -> Maybe a
 reference r = runP (re2Monad r)
