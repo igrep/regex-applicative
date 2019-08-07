@@ -1,4 +1,5 @@
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# OPTIONS_GHC -Wno-unused-imports #-}
 {-# OPTIONS_GHC -fno-do-lambda-eta-expansion #-}
 module Text.Regex.Applicative.Compile (compile) where
@@ -10,7 +11,7 @@ import qualified Data.IntMap as IntMap
 import Data.Maybe
 import Text.Regex.Applicative.Types
 
-compile :: RE s xs ys a -> (a -> Record xs -> [Thread s (Record ys) r]) -> [Thread s (Record ys) r]
+compile :: RE s xs ys a -> (a -> [Thread s (Record xs -> Record ys) r]) -> [Thread s (Record xs -> Record ys) r]
 compile e k = compile2 e (SingleCont k)
 
 data Cont a = SingleCont !a | EmptyNonEmpty !a !a
@@ -43,7 +44,7 @@ nonEmptyCont k =
 --
 -- compile2 function takes two continuations: one when the match is empty and
 -- one when the match is non-empty. See the "Rep" case for the reason.
-compile2 :: RE s xs ys a -> Cont (a -> Record xs -> [Thread s (Record ys) r]) -> [Thread s (Record ys) r]
+compile2 :: forall s xs ys a r. RE s xs ys a -> Cont (a -> [Thread s (Record xs -> Record ys) r]) -> [Thread s (Record xs -> Record ys) r]
 compile2 e =
     case e of
         Eps -> \k -> emptyCont k ()
