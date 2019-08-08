@@ -11,8 +11,8 @@ import qualified Data.IntMap as IntMap
 import Data.Maybe
 import Text.Regex.Applicative.Types
 
-compile :: RE s xs ys a -> (a -> [Thread s (Record xs -> Record ys) r]) -> [Thread s (Record xs -> Record ys) r]
-compile e k = compile2 e (SingleCont k)
+compile :: RE s xs ys a -> Record xs -> (Record xs -> a -> [Thread s (Record ys) r]) -> [Thread s (Record ys) r]
+compile e cs k = compile2 e cs (SingleCont k)
 
 data Cont a = SingleCont !a | EmptyNonEmpty !a !a
 
@@ -44,42 +44,43 @@ nonEmptyCont k =
 --
 -- compile2 function takes two continuations: one when the match is empty and
 -- one when the match is non-empty. See the "Rep" case for the reason.
-compile2 :: forall s xs ys a r. RE s xs ys a -> Cont (a -> [Thread s (Record xs -> Record ys) r]) -> [Thread s (Record xs -> Record ys) r]
+compile2 :: forall s xs ys a r. RE s xs ys a -> Record xs -> Cont (Record xs -> a -> [Thread s (Record ys) r]) -> [Thread s (Record ys) r]
 compile2 e =
     case e of
-        Eps -> \k -> emptyCont k ()
-        Symbol i p -> \k -> [t $ nonEmptyCont k] where
-          -- t :: (a -> [Thread s (Record xs) (Record ys) r]) -> Thread s (Record xs) (Record ys) r
-          t k = Thread i $ \s xs ->
+        Eps -> \cs k -> emptyCont k cs ()
+        Symbol i p -> \cs k -> [t cs $ nonEmptyCont k] where
+          t :: Record xs -> (Record xs -> a -> [Thread s (Record ys) r]) -> Thread s (Record ys) r
+          t cs k = Thread i $ \s xs ->
             case p s of
-              Just r -> k r
+              Just r -> k cs r
               Nothing -> []
         App n1 n2 ->
             let a1 = compile2 n1
                 a2 = compile2 n2
-            in \k -> case k of
-                SingleCont k' -> a1 $ SingleCont $ \a1_value -> a2 $ SingleCont $ k' . a1_value
+            in \cs k -> case k of
+                SingleCont k' -> a1 cs $ SingleCont $ \cs1 a1_value -> a2 cs1 $ SingleCont (\cs0 -> k' cs0 . a1_value)
                 EmptyNonEmpty ke kn ->
-                    a1 $ EmptyNonEmpty
-                        -- empty
-                        (\a1_value -> a2 $ EmptyNonEmpty (ke . a1_value) (kn . a1_value))
-                        -- non-empty
-                        (\a1_value -> a2 $ EmptyNonEmpty (kn . a1_value) (kn . a1_value))
+                    let emptyCont cs1 a1_value =
+                            a2 cs1 $ EmptyNonEmpty (\cs0 -> ke cs0 . a1_value) (\cs0 -> kn cs0 . a1_value)
+                        nonEmptyCont cs1 a1_value =
+                            a2 cs1 $ EmptyNonEmpty (\cs0 -> kn cs0 . a1_value) (\cs0 -> kn cs0 . a1_value)
+                    in a1 cs $ EmptyNonEmpty emptyCont nonEmptyCont
         Alt n1 n2 ->
             let a1 = compile2 n1
                 a2 = compile2 n2
-            in \k -> a1 k ++ a2 k
-        Fail -> const []
-        Fmap f n -> let a = compile2 n in \k -> a $ fmap (. f) k
+            in \cs k -> a1 cs k ++ a2 cs k
+        Fail -> const $ const []
+        Fmap f n -> let a = compile2 n in \cs k -> a cs $ fmap (\f' cs' a_value -> f' cs' (f a_value) ) k
         -- This is actually the point where we use the difference between
         -- continuations. For the inner RE the empty continuation is a
         -- "failing" one in order to avoid non-termination.
         Rep g f b n ->
             let a = compile2 n
-                threads b' k =
+                threads :: a -> Record xs -> Cont (Record xs -> a -> [Thread s (Record ys) r]) -> [Thread s (Record ys) r]
+                threads b' cs k =
                     combine g
-                        (a $ EmptyNonEmpty (\_ -> []) (\v -> let b'' = f b' v in threads b'' (SingleCont $ nonEmptyCont k)))
-                        (emptyCont k b')
+                        (a cs $ EmptyNonEmpty (\_ _ -> []) (\cs' v -> let b'' = f b' v in threads b'' cs' (SingleCont $ nonEmptyCont k)))
+                        (emptyCont k cs b')
             in threads b
 
 combine :: Greediness -> [a] -> [a] -> [a]
