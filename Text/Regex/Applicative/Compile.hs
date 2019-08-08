@@ -11,7 +11,7 @@ import qualified Data.IntMap as IntMap
 import Data.Maybe
 import Text.Regex.Applicative.Types
 
-compile :: RE s xs ys a -> Record xs -> (Record xs -> a -> [Thread s (Record ys) r]) -> [Thread s (Record ys) r]
+compile :: RE s xs ys a -> Record xs -> (Record ys -> a -> [Thread s (Record xs) r]) -> [Thread s (Record xs) r]
 compile e cs k = compile2 e cs (SingleCont k)
 
 data Cont a = SingleCont !a | EmptyNonEmpty !a !a
@@ -44,7 +44,7 @@ nonEmptyCont k =
 --
 -- compile2 function takes two continuations: one when the match is empty and
 -- one when the match is non-empty. See the "Rep" case for the reason.
-compile2 :: forall s xs ys a r. RE s xs ys a -> Record xs -> Cont (Record xs -> a -> [Thread s (Record ys) r]) -> [Thread s (Record ys) r]
+compile2 :: forall s xs ys a r. RE s xs ys a -> Record xs -> Cont (Record ys -> a -> [Thread s (Record xs) r]) -> [Thread s (Record xs) r]
 compile2 e =
     case e of
         Eps -> \cs k -> emptyCont k cs ()
