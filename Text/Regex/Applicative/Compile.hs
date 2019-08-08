@@ -50,7 +50,7 @@ compile2 e =
         Eps -> \cs k -> emptyCont k cs ()
         Symbol i p -> \cs k -> [t cs $ nonEmptyCont k] where
           t :: Record xs -> (Record xs -> a -> [Thread s (Record ys) r]) -> Thread s (Record ys) r
-          t cs k = Thread i $ \s xs ->
+          t cs k = Thread i $ \s ->
             case p s of
               Just r -> k cs r
               Nothing -> []
@@ -58,17 +58,21 @@ compile2 e =
             let a1 = compile2 n1
                 a2 = compile2 n2
             in \cs k -> case k of
-                SingleCont k' -> a1 cs $ SingleCont $ \cs1 a1_value -> a2 cs1 $ SingleCont (\cs0 -> k' cs0 . a1_value)
+                SingleCont k' -> a1 cs . SingleCont $ \cs1 a1_value -> a2 cs1 $ SingleCont (\cs0 -> k' cs0 . a1_value)
                 EmptyNonEmpty ke kn ->
-                    let emptyCont cs1 a1_value =
+                    let empty cs1 a1_value =
                             a2 cs1 $ EmptyNonEmpty (\cs0 -> ke cs0 . a1_value) (\cs0 -> kn cs0 . a1_value)
-                        nonEmptyCont cs1 a1_value =
+                        nonEmpty cs1 a1_value =
                             a2 cs1 $ EmptyNonEmpty (\cs0 -> kn cs0 . a1_value) (\cs0 -> kn cs0 . a1_value)
-                    in a1 cs $ EmptyNonEmpty emptyCont nonEmptyCont
+                    in a1 cs $ EmptyNonEmpty empty nonEmpty
         Alt n1 n2 ->
             let a1 = compile2 n1
                 a2 = compile2 n2
             in \cs k -> a1 cs k ++ a2 cs k
+        Capture key n ->
+            let a = compile2 n
+                t k' cs0' v = k' (key @== v <: cs0') v
+            in \cs0 k -> a cs0 $ t <$> k
         Fail -> const $ const []
         Fmap f n -> let a = compile2 n in \cs k -> a cs $ fmap (\f' cs' a_value -> f' cs' (f a_value) ) k
         -- This is actually the point where we use the difference between

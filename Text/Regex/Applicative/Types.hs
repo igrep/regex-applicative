@@ -23,7 +23,7 @@ newtype ThreadId = ThreadId Int
 data Thread s i r
     = Thread
         { threadId_ :: ThreadId
-        , _threadCont :: s -> i -> [Thread s i r]
+        , _threadCont :: s -> [Thread s i r]
         }
     | Accept r i
 
