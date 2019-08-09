@@ -58,12 +58,12 @@ compile2 e =
             let a1 = compile2 n1
                 a2 = compile2 n2
             in \cs k -> case k of
-                SingleCont k' -> a1 cs . SingleCont $ \cs1 a1_value -> a2 cs1 $ SingleCont (\cs0 -> map (mapThreadIx (const cs1)) . k' cs0 . a1_value)
+                SingleCont k' -> a1 cs . SingleCont $ \cs1 a1_value -> a2 cs1 $ SingleCont (\cs0 -> k' cs0 . a1_value)
                 EmptyNonEmpty ke kn ->
                     let empty cs1 a1_value =
-                            a2 cs1 $ EmptyNonEmpty (\cs0 -> map (mapThreadIx (const cs1)) . ke cs0 . a1_value) (\cs0 -> map (mapThreadIx (const cs1)) . kn cs0 . a1_value)
+                            a2 cs1 $ EmptyNonEmpty (\cs0 -> ke cs0 . a1_value) (\cs0 -> kn cs0 . a1_value)
                         nonEmpty cs1 a1_value =
-                            a2 cs1 $ EmptyNonEmpty (\cs0 -> map (mapThreadIx (const cs1)) . kn cs0 . a1_value) (\cs0 -> map (mapThreadIx (const cs1)) . kn cs0 . a1_value)
+                            a2 cs1 $ EmptyNonEmpty (\cs0 -> kn cs0 . a1_value) (\cs0 -> kn cs0 . a1_value)
                     in a1 cs $ EmptyNonEmpty empty nonEmpty
         Alt n1 n2 ->
             let a1 = compile2 n1
