@@ -4,33 +4,63 @@
 {-# OPTIONS_GHC -fno-do-lambda-eta-expansion #-}
 module Text.Regex.Applicative.Compile (compile) where
 
-import Control.Applicative
-import Control.Monad.Trans.State
-import Data.Extensible hiding (State)
-import qualified Data.IntMap as IntMap
-import Data.Maybe
+import Data.Extensible
+import Data.Functor.Indexed
 import Text.Regex.Applicative.Types
+import Control.Applicative
 
-compile :: RE s xs ys a -> Record xs -> (Record ys -> a -> [Thread s (Record xs) r]) -> [Thread s (Record xs) r]
-compile e cs k = compile2 e cs (SingleCont k)
+compile :: RE s xs ys a -> (a -> [Thread s (Record ys) r]) -> [Thread s (Record xs) r]
+compile e k = runChooseContT (compile2 e) (Single k)
 
-data Cont a = SingleCont !a | EmptyNonEmpty !a !a
+data Choose a = Single !a | EmptyNonEmpty !a !a
 
-instance Functor Cont where
+{-
+ContT r m a = (a -> m r) -> m r
+IxState i j a = i -> (a, j)
+
+ContT r (IxState i j) a = (a -> (IxState i j) r) -> (IxState i j) r
+ContT r (IxState i j) a = (a -> (i -> (r, j)) -> (i -> (r, j))
+ContT r (IxState i j) a = (a -> i -> (r, j)) -> i -> (r, j)
+
+|
+v
+
+ContT r (IxState i j) a = Choose (a -> i -> (r, j)) -> i -> (r, j)
+-}
+
+instance Functor Choose where
     fmap f k =
         case k of
-            SingleCont a -> SingleCont (f a)
+            Single a -> Single (f a)
             EmptyNonEmpty a b -> EmptyNonEmpty (f a) (f b)
 
-emptyCont :: Cont a -> a
-emptyCont k =
+newtype ChooseCont r o a = ChooseCont { runChooseContT :: Choose (a -> o) -> r }
+
+instance IxFunctor ChooseCont where
+    imap f mx = ChooseCont $ \ck -> runChooseContT mx $ (. f) <$> ck
+
+instance IxPointed ChooseCont where
+    ireturn = error "No IxPointed instance for ChooseCont is not defined"
+
+instance IxApplicative ChooseCont where
+    iap f v = ChooseCont $ \k ->
+        case k of
+            Single sk -> runChooseContT f . Single $ \g -> runChooseContT v $ Single (sk . g)
+            EmptyNonEmpty ke kn ->
+                runChooseContT f $ EmptyNonEmpty
+                    (\g -> runChooseContT v $ EmptyNonEmpty (ke . g) (kn . g))
+                    (\g -> runChooseContT v $ EmptyNonEmpty (kn . g) (kn . g))
+
+chooseEmpty :: Choose a -> a
+chooseEmpty k =
     case k of
-        SingleCont a -> a
+        Single a -> a
         EmptyNonEmpty a _ -> a
-nonEmptyCont :: Cont a -> a
-nonEmptyCont k =
+
+chooseNonEmpty :: Choose a -> a
+chooseNonEmpty k =
     case k of
-        SingleCont a -> a
+        Single a -> a
         EmptyNonEmpty _ a -> a
 
 -- The whole point of this module is this function, compile2, which needs to be
@@ -44,48 +74,33 @@ nonEmptyCont k =
 --
 -- compile2 function takes two continuations: one when the match is empty and
 -- one when the match is non-empty. See the "Rep" case for the reason.
-compile2 :: forall s xs ys a r. RE s xs ys a -> Record xs -> Cont (Record ys -> a -> [Thread s (Record xs) r]) -> [Thread s (Record xs) r]
+compile2 :: RE s xs ys a -> ChooseCont [Thread s (Record xs) r] [Thread s (Record ys) r] a
 compile2 e =
     case e of
-        Eps -> \cs k -> emptyCont k cs ()
-        Symbol i p -> \cs k -> [t cs $ nonEmptyCont k] where
-          t :: Record xs -> (Record xs -> a -> [Thread s (Record ys) r]) -> Thread s (Record ys) r
-          t cs k = Thread i $ \s ->
+        Eps -> ChooseCont $ \k -> chooseEmpty k ()
+        Symbol i p -> ChooseCont $ \k -> [t $ chooseNonEmpty k] where
+          -- t :: (a -> [Thread s r]) -> Thread s r
+          t k = Thread i $ \s ->
             case p s of
-              Just r -> k cs r
+              Just r -> k r
               Nothing -> []
-        App n1 n2 ->
-            let a1 = compile2 n1
-                a2 = compile2 n2
-            in \cs k -> case k of
-                SingleCont k' -> a1 cs . SingleCont $ \cs1 a1_value -> a2 cs1 $ SingleCont (\cs0 -> k' cs0 . a1_value)
-                EmptyNonEmpty ke kn ->
-                    let empty cs1 a1_value =
-                            a2 cs1 $ EmptyNonEmpty (\cs0 -> ke cs0 . a1_value) (\cs0 -> kn cs0 . a1_value)
-                        nonEmpty cs1 a1_value =
-                            a2 cs1 $ EmptyNonEmpty (\cs0 -> kn cs0 . a1_value) (\cs0 -> kn cs0 . a1_value)
-                    in a1 cs $ EmptyNonEmpty empty nonEmpty
+        App n1 n2 -> compile2 n1 <<*>> compile2 n2
         Alt n1 n2 ->
-            let a1 = compile2 n1
-                a2 = compile2 n2
-            in \cs k -> a1 cs k ++ a2 cs k
-        Capture key n ->
-            let a = compile2 n
-                t k' cs0' v = k' (key @== v <: cs0') v
-            in \cs0 k -> a cs0 $ t <$> k
-        Fail -> const $ const []
-        Fmap f n -> let a = compile2 n in \cs k -> a cs $ fmap (\f' cs' a_value -> f' cs' (f a_value) ) k
+            let a1 = runChooseContT $ compile2 n1
+                a2 = runChooseContT $ compile2 n2
+            in ChooseCont $ \k -> a1 k ++ a2 k
+        Fail -> ChooseCont $ const []
+        Fmap f n -> f <<$>> compile2 n
         -- This is actually the point where we use the difference between
         -- continuations. For the inner RE the empty continuation is a
         -- "failing" one in order to avoid non-termination.
         Rep g f b n ->
-            let a = compile2 n
-                threads :: a -> Record xs -> Cont (Record xs -> a -> [Thread s (Record ys) r]) -> [Thread s (Record ys) r]
-                threads b' cs k =
+            let a = runChooseContT $ compile2 n
+                threads b' k =
                     combine g
-                        (a cs $ EmptyNonEmpty (\_ _ -> []) (\cs' v -> let b'' = f b' v in threads b'' cs' (SingleCont $ nonEmptyCont k)))
-                        (emptyCont k cs b')
-            in threads b
+                        (a $ EmptyNonEmpty (\_ -> []) (\v -> let b'' = f b' v in threads b'' (Single $ chooseNonEmpty k)))
+                        (chooseEmpty k b')
+            in ChooseCont $ threads b
 
 combine :: Greediness -> [a] -> [a] -> [a]
 combine g continue stop =
