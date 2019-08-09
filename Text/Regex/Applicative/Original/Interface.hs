@@ -4,6 +4,7 @@ module Text.Regex.Applicative.Original.Interface where
 import Control.Applicative hiding (empty)
 import qualified Control.Applicative
 import Control.Arrow hiding (first)
+import Control.Monad (void)
 import qualified Control.Arrow as A
 import Data.String
 import Data.Maybe
@@ -17,8 +18,8 @@ instance Functor (RE s) where
 instance Applicative (RE s) where
     pure x = const x <$> Eps
     a1 <*> a2 = App a1 a2
-    a *> b = pure (const id) <*> Void a <*> b
-    a <* b = pure const <*> a <*> Void b
+    a *> b = pure (const id) <*> void a <*> b
+    a <* b = pure const <*> a <*> void b
 
 instance Alternative (RE s) where
     a1 <|> a2 = Alt a1 a2
@@ -42,7 +43,6 @@ comap f re =
     Fmap g r      -> Fmap g (comap f r)
     Fail          -> Fail
     Rep gr fn a r -> Rep gr fn a (comap f r)
-    Void r        -> Void (comap f r)
 
 -- | Match and return a single symbol which satisfies the predicate
 psym :: (s -> Bool) -> RE s s
@@ -113,8 +113,6 @@ withMatched Fail = Fail
 withMatched (Fmap f x) = A.first f <$> withMatched x
 withMatched (Rep gr f a0 x) =
     Rep gr (\(a, s) -> f a *** (s ++)) (a0, []) (withMatched x)
--- N.B.: this ruins the Void optimization
-withMatched (Void x) = (A.first $ const ()) <$> withMatched x
 
 -- | @s =~ a = match a s@
 (=~) :: [s] -> RE s a -> Maybe a

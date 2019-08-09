@@ -128,7 +128,6 @@ renumber = (`evalState` ThreadId 1) . go
     go Fail = return Fail
     go (Fmap f a) = Fmap f <$> go a
     go (Rep g f b a) = Rep g f b <$> go a
-    go (Void a) = Void <$> go a
 
 fresh :: State ThreadId ThreadId
 fresh = do
