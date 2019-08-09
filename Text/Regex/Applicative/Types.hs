@@ -33,6 +33,10 @@ threadId :: Thread s i r -> Maybe ThreadId
 threadId Thread { threadId_ = i } = Just i
 threadId _ = Nothing
 
+mapThreadIx :: (i -> j) -> Thread s i r -> Thread s j r
+mapThreadIx _ =
+    error "mapThreadIx is not defined yet!"
+
 data Greediness = Greedy | NonGreedy
     deriving (Show, Read, Eq, Ord, Enum)
 
