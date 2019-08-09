@@ -32,9 +32,19 @@ Library
                        Text.Regex.Applicative.Common
                        Text.Regex.Applicative.Reference
                        Text.Regex.Applicative.StateQueue
+
+                       Text.Regex.Applicative.Original
+                       Text.Regex.Applicative.Original.Object
+                       Text.Regex.Applicative.Original.Common
+                       Text.Regex.Applicative.Original.StateQueue
+
   Other-modules:       Text.Regex.Applicative.Interface
                        Text.Regex.Applicative.Types
                        Text.Regex.Applicative.Compile
+
+                       Text.Regex.Applicative.Original.Interface
+                       Text.Regex.Applicative.Original.Types
+                       Text.Regex.Applicative.Original.Compile
   GHC-Options:     -Wall
                    -fno-warn-name-shadowing
                    -fno-warn-missing-signatures
