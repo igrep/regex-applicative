@@ -1,5 +1,5 @@
 {-# LANGUAGE GADTs #-}
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeOperators, DataKinds, PolyKinds #-}
 {-# OPTIONS_GHC -Wno-unused-imports #-}
 {-# OPTIONS_GHC -fno-do-lambda-eta-expansion #-}
 module Text.Regex.Applicative.Compile (compile) where
@@ -10,7 +10,7 @@ import Text.Regex.Applicative.Types
 import Control.Applicative
 
 compile :: RE s xs ys a -> (a -> [Thread s (Record ys) r]) -> [Thread s (Record xs) r]
-compile e k = runChooseContT (compile2 e) (Single k)
+compile e k = runChooseCont (compile2 e) (Single k)
 
 data Choose a = Single !a | EmptyNonEmpty !a !a
 
@@ -34,10 +34,10 @@ instance Functor Choose where
             Single a -> Single (f a)
             EmptyNonEmpty a b -> EmptyNonEmpty (f a) (f b)
 
-newtype ChooseCont r o a = ChooseCont { runChooseContT :: Choose (a -> o) -> r }
+newtype ChooseCont r o a = ChooseCont { runChooseCont :: Choose (a -> o) -> r }
 
 instance IxFunctor ChooseCont where
-    imap f mx = ChooseCont $ \ck -> runChooseContT mx $ (. f) <$> ck
+    imap f mx = ChooseCont $ \ck -> runChooseCont mx $ (. f) <$> ck
 
 instance IxPointed ChooseCont where
     ireturn = error "No IxPointed instance for ChooseCont is not defined"
@@ -45,11 +45,11 @@ instance IxPointed ChooseCont where
 instance IxApplicative ChooseCont where
     iap f v = ChooseCont $ \k ->
         case k of
-            Single sk -> runChooseContT f . Single $ \g -> runChooseContT v $ Single (sk . g)
+            Single sk -> runChooseCont f . Single $ \g -> runChooseCont v $ Single (sk . g)
             EmptyNonEmpty ke kn ->
-                runChooseContT f $ EmptyNonEmpty
-                    (\g -> runChooseContT v $ EmptyNonEmpty (ke . g) (kn . g))
-                    (\g -> runChooseContT v $ EmptyNonEmpty (kn . g) (kn . g))
+                runChooseCont f $ EmptyNonEmpty
+                    (\g -> runChooseCont v $ EmptyNonEmpty (ke . g) (kn . g))
+                    (\g -> runChooseCont v $ EmptyNonEmpty (kn . g) (kn . g))
 
 chooseEmpty :: Choose a -> a
 chooseEmpty k =
@@ -86,16 +86,21 @@ compile2 e =
               Nothing -> []
         App n1 n2 -> compile2 n1 <<*>> compile2 n2
         Alt n1 n2 ->
-            let a1 = runChooseContT $ compile2 n1
-                a2 = runChooseContT $ compile2 n2
+            let a1 = runChooseCont $ compile2 n1
+                a2 = runChooseCont $ compile2 n2
             in ChooseCont $ \k -> a1 k ++ a2 k
+        Capture key e' ->
+            let k = runChooseCont $ compile2 e'
+                f :: [Thread s (Record xs) r] -> [Thread s (Record (_ ': xs)) r]
+                f = undefined
+            in ChooseCont (f . k)
         Fail -> ChooseCont $ const []
         Fmap f n -> f <<$>> compile2 n
         -- This is actually the point where we use the difference between
         -- continuations. For the inner RE the empty continuation is a
         -- "failing" one in order to avoid non-termination.
         Rep g f b n ->
-            let a = runChooseContT $ compile2 n
+            let a = runChooseCont $ compile2 n
                 threads b' k =
                     combine g
                         (a $ EmptyNonEmpty (\_ -> []) (\v -> let b'' = f b' v in threads b'' (Single $ chooseNonEmpty k)))
